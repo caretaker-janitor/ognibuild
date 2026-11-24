@@ -16,16 +16,27 @@ use std::path::{Path, PathBuf};
 /// Uses dpkg-architecture to determine the build architecture.
 ///
 /// # Returns
-/// The build architecture string (e.g., "amd64")
-///
-/// # Panics
-/// Panics if dpkg-architecture is not available or fails to run.
-pub fn get_build_architecture() -> String {
-    std::process::Command::new("dpkg-architecture")
-        .arg("-qDEB_BUILD_ARCH")
-        .output()
-        .map(|output| String::from_utf8(output.stdout).unwrap().trim().to_string())
-        .unwrap()
+/// The build architecture string (e.g., "amd64"), or an error if
+/// dpkg-architecture is not available or fails to run.
+pub fn get_build_architecture() -> Result<String, std::io::Error> {
+    query_dpkg_architecture("DEB_BUILD_ARCH")
+}
+
+/// Query a single variable from dpkg-architecture.
+fn query_dpkg_architecture(variable: &str) -> Result<String, std::io::Error> {
+    let output = std::process::Command::new("dpkg-architecture")
+        .arg(format!("-q{}", variable))
+        .stderr(std::process::Stdio::inherit())
+        .output()?;
+    if !output.status.success() {
+        return Err(std::io::Error::other(format!(
+            "dpkg-architecture -q{} failed: {}",
+            variable, output.status
+        )));
+    }
+    let value = String::from_utf8(output.stdout)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+    Ok(value.trim().to_string())
 }
 
 /// Default build command for Debian packages.
@@ -627,16 +638,21 @@ mod tests {
     #[test]
     #[cfg(target_os = "linux")]
     fn test_get_build_architecture() {
-        let arch = get_build_architecture();
+        let arch = get_build_architecture().unwrap();
         assert!(!arch.is_empty() && arch.len() < 10);
     }
 
     #[test]
+    #[cfg(target_os = "linux")]
+    fn test_query_dpkg_architecture_unknown_variable() {
+        assert!(query_dpkg_architecture("DEB_NOT_A_VARIABLE").is_err());
+    }
+
+    #[test]
     #[cfg(not(target_os = "linux"))]
-    #[should_panic(expected = "No such file or directory")]
-    fn test_get_build_architecture_panics_on_non_linux() {
-        // This test verifies that the function panics when dpkg-architecture isn't available
-        let _ = get_build_architecture();
+    fn test_get_build_architecture_fails_on_non_linux() {
+        // dpkg-architecture is not available here
+        assert!(get_build_architecture().is_err());
     }
 
     #[test]

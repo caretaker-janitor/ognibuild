@@ -347,7 +347,7 @@ impl RemoteContentsFileSearcher {
     /// Ok(()) if successful, Error otherwise
     pub fn load_local(&mut self) -> Result<(), Error> {
         let repositories = apt_sources::Repositories::default();
-        let arch = crate::debian::build::get_build_architecture();
+        let arch = crate::debian::build::get_build_architecture()?;
         let cache_dirs = vec![Path::new("/var/lib/apt/lists")];
         let load_url = |url: &url::Url| load_url_with_cache(url, cache_dirs.as_slice());
         let urls = contents_urls_from_sources(
@@ -370,7 +370,7 @@ impl RemoteContentsFileSearcher {
         let (repositories, _errors) = apt_sources::Repositories::load_from_directory(
             &session.external_path(Path::new("/etc/apt")),
         );
-        let arch = crate::debian::build::get_build_architecture();
+        let arch = crate::debian::build::get_build_architecture()?;
         let cache_dirs = [session.external_path(Path::new("/var/lib/apt/lists"))];
         let load_url = |url: &url::Url| {
             load_url_with_cache(
