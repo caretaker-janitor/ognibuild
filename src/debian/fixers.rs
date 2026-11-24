@@ -32,10 +32,9 @@ fn targeted_python_versions(tree: &dyn Tree, subpath: &Path) -> Vec<String> {
         return vec![];
     };
 
-    let targeted = vec![];
+    let mut targeted = vec![];
     for entry in all.entries() {
         for relation in entry.relations() {
-            let mut targeted = vec![];
             let Some(name) = relation.try_name() else {
                 continue;
             };
@@ -575,4 +574,33 @@ where
     ));
     ret.extend(apt_fixers(apt, packaging_context)?);
     Ok(ret)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use breezyshim::tree::MutableTree;
+
+    #[test]
+    fn test_targeted_python_versions() {
+        let td = tempfile::tempdir().unwrap();
+        breezyshim::init();
+        let tree = breezyshim::controldir::create_standalone_workingtree(
+            td.path(),
+            &breezyshim::controldir::ControlDirFormat::default(),
+        )
+        .unwrap();
+        std::fs::create_dir_all(td.path().join("debian")).unwrap();
+        std::fs::write(
+            td.path().join("debian/control"),
+            "Source: foo\nBuild-Depends: debhelper-compat (= 13), python3-setuptools\n",
+        )
+        .unwrap();
+        tree.add(&[Path::new("debian"), Path::new("debian/control")])
+            .unwrap();
+        assert_eq!(
+            targeted_python_versions(&tree, Path::new("")),
+            vec!["python3".to_owned()]
+        );
+    }
 }
