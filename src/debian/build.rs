@@ -80,8 +80,11 @@ pub fn builddeb_command(
         }
     }
 
+    // -P keeps the tree being built (the working directory) off sys.path,
+    // so its own modules cannot shadow the installed breezy.
     let mut args = vec![
         python_command(),
+        "-P".to_string(),
         "-m".to_string(),
         "breezy".to_string(),
         "builddeb".to_string(),
@@ -741,6 +744,7 @@ mod tests {
         );
         assert_eq!(command, vec![
             python_command(),
+            "-P".to_string(),
             "-m".to_string(),
             "breezy".to_string(),
             "builddeb".to_string(),
@@ -750,6 +754,27 @@ mod tests {
             "--apt-repository-key=my-ppa-key".to_string(),
             "--result-dir=/tmp".to_string(),
         ]);
+    }
+
+    #[test]
+    fn test_builddeb_command_ignores_modules_in_tree() {
+        let td = tempfile::tempdir().unwrap();
+        std::fs::create_dir(td.path().join("breezy")).unwrap();
+        std::fs::write(
+            td.path().join("breezy/__init__.py"),
+            "raise SystemExit(3)\n",
+        )
+        .unwrap();
+        let command = builddeb_command(None, None, None, None, None);
+        let builddeb = command.iter().position(|arg| arg == "builddeb").unwrap();
+        let status = std::process::Command::new(&command[0])
+            .args(&command[1..builddeb])
+            .arg("--version")
+            .current_dir(td.path())
+            .stdout(std::process::Stdio::null())
+            .status()
+            .unwrap();
+        assert!(status.success(), "{:?}", status);
     }
 
     #[test]
