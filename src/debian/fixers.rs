@@ -22,14 +22,14 @@ use std::path::Path;
 ///
 /// # Returns
 /// A list of Python version strings that the package targets
-fn targeted_python_versions(tree: &dyn Tree, subpath: &Path) -> Vec<String> {
-    let f = tree.get_file(&subpath.join("debian/control")).unwrap();
-    let control = debian_control::Control::read(f).unwrap();
-    let source = control.source().unwrap();
+fn targeted_python_versions(tree: &dyn Tree, subpath: &Path) -> Result<Vec<String>, Error> {
+    let f = tree.get_file(&subpath.join("debian/control"))?;
+    let control = debian_control::Control::read(f).map_err(Error::ControlError)?;
+    let source = control.source().ok_or(Error::MissingSource)?;
     let all = if let Some(build_depends) = source.build_depends() {
         build_depends
     } else {
-        return vec![];
+        return Ok(vec![]);
     };
 
     let targeted = vec![];
@@ -50,7 +50,7 @@ fn targeted_python_versions(tree: &dyn Tree, subpath: &Path) -> Vec<String> {
             }
         }
     }
-    targeted
+    Ok(targeted)
 }
 
 /// Tie-breaker for Python dependencies based on targeted Python versions.
@@ -64,9 +64,9 @@ pub struct PythonTieBreaker {
 }
 
 impl PythonTieBreaker {
-    fn from_tree(tree: &dyn Tree, subpath: &Path) -> Self {
-        let targeted = targeted_python_versions(tree, subpath);
-        Self { targeted }
+    fn from_tree(tree: &dyn Tree, subpath: &Path) -> Result<Self, Error> {
+        let targeted = targeted_python_versions(tree, subpath)?;
+        Ok(Self { targeted })
     }
 }
 
@@ -533,7 +533,7 @@ where
         Box::new(PythonTieBreaker::from_tree(
             &packaging_context.tree,
             &packaging_context.subpath,
-        )),
+        )?),
         Box::new(build_dep_tie_breaker),
         #[cfg(feature = "udd")]
         Box::new(crate::debian::udd::PopconTieBreaker),
@@ -575,4 +575,55 @@ where
     ));
     ret.extend(apt_fixers(apt, packaging_context)?);
     Ok(ret)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use breezyshim::tree::MutableTree;
+    use breezyshim::workingtree::GenericWorkingTree;
+
+    fn make_tree(control: Option<&str>) -> (tempfile::TempDir, GenericWorkingTree) {
+        let td = tempfile::tempdir().unwrap();
+        breezyshim::init();
+        let tree = breezyshim::controldir::create_standalone_workingtree(
+            td.path(),
+            &breezyshim::controldir::ControlDirFormat::default(),
+        )
+        .unwrap();
+        if let Some(control) = control {
+            std::fs::create_dir_all(td.path().join("debian")).unwrap();
+            std::fs::write(td.path().join("debian/control"), control).unwrap();
+            tree.add(&[Path::new("debian"), Path::new("debian/control")])
+                .unwrap();
+        }
+        (td, tree)
+    }
+
+    #[test]
+    fn test_targeted_python_versions_missing_control() {
+        let (_td, tree) = make_tree(None);
+        assert!(matches!(
+            targeted_python_versions(&tree, Path::new("")),
+            Err(Error::BrzError(_))
+        ));
+    }
+
+    #[test]
+    fn test_targeted_python_versions_invalid_control() {
+        let (_td, tree) = make_tree(Some("Source: foo\n:\n"));
+        assert!(matches!(
+            targeted_python_versions(&tree, Path::new("")),
+            Err(Error::ControlError(_))
+        ));
+    }
+
+    #[test]
+    fn test_targeted_python_versions_no_source() {
+        let (_td, tree) = make_tree(Some("Package: foo\n"));
+        assert!(matches!(
+            targeted_python_versions(&tree, Path::new("")),
+            Err(Error::MissingSource)
+        ));
+    }
 }
