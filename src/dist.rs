@@ -41,7 +41,7 @@ pub fn dist(
     // TODO(jelmer): use scan_buildsystems to also look in subdirectories
     let buildsystems = detect_buildsystems(export_directory);
     let scope = auto_installation_scope(session);
-    let installer = auto_installer(session, scope, None);
+    let installer = auto_installer(session, scope, None)?;
     let mut fixers: Vec<Box<dyn BuildFixer<InstallerError>>> = vec![
         Box::new(UnexpandedAutoconfMacroFixer::new(
             session,

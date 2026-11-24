@@ -428,24 +428,25 @@ pub fn auto_installation_scope(session: &dyn crate::session::Session) -> Install
 /// * `dep_server_url` - Optional URL of a dependency server to use
 ///
 /// # Returns
-/// An installer that can install dependencies in the given session
+/// An installer that can install dependencies in the given session, or an
+/// error if the session could not be checked for the available package managers
 pub fn auto_installer<'a>(
     session: &'a dyn crate::session::Session,
     #[allow(unused_variables)] scope: InstallationScope,
     #[allow(unused_variables)] dep_server_url: Option<&url::Url>,
-) -> Box<dyn Installer + 'a> {
+) -> Result<Box<dyn Installer + 'a>, Error> {
     // if session is SchrootSession or if we're root, use apt
     let mut installers: Vec<Box<dyn Installer + 'a>> = Vec::new();
     #[cfg(feature = "debian")]
-    if scope == InstallationScope::Global && crate::session::which(session, "apt-get").is_some() {
+    if scope == InstallationScope::Global && crate::session::which(session, "apt-get")?.is_some() {
         log::info!(
             "Using global installation scope and apt-get is available, so using apt installer"
         );
         installers.push(apt_installer(session, dep_server_url));
     }
     if scope == InstallationScope::Global
-        && (crate::session::which(session, "dnf5").is_some()
-            || crate::session::which(session, "dnf").is_some())
+        && (crate::session::which(session, "dnf5")?.is_some()
+            || crate::session::which(session, "dnf")?.is_some())
     {
         log::info!("Using global installation scope and dnf is available, so using dnf installer");
         installers.push(
@@ -453,7 +454,7 @@ pub fn auto_installer<'a>(
         );
     }
     installers.extend(native_installers(session));
-    Box::new(StackedInstaller::new(installers))
+    Ok(Box::new(StackedInstaller::new(installers)))
 }
 
 /// Install missing dependencies.

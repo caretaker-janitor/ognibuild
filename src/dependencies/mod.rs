@@ -2402,7 +2402,7 @@ impl Dependency for X11Dependency {
 
     fn present(&self, session: &dyn Session) -> bool {
         // Does the X binary exist?
-        crate::session::which(session, "X").is_some()
+        crate::session::which(session, "X").unwrap().is_some()
     }
 
     fn project_present(&self, _session: &dyn Session) -> bool {

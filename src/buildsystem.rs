@@ -231,11 +231,11 @@ pub fn guaranteed_which(
     installer: &dyn Installer,
     name: &str,
 ) -> Result<PathBuf, InstallerError> {
-    match which(session, name) {
+    match which(session, name)? {
         Some(path) => Ok(PathBuf::from(path)),
         None => {
             installer.install(&BinaryDependency::new(name), InstallationScope::Global)?;
-            Ok(PathBuf::from(which(session, name).unwrap()))
+            Ok(PathBuf::from(which(session, name)?.unwrap()))
         }
     }
 }

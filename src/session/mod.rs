@@ -735,7 +735,7 @@ impl<'a> CommandBuilder<'a> {
 ///
 /// # Returns
 /// The full path to the executable if found, or None if not found
-pub fn which(session: &dyn Session, name: &str) -> Option<String> {
+pub fn which(session: &dyn Session, name: &str) -> Result<Option<String>, Error> {
     let ret = match session.check_output(
         vec!["which", name],
         Some(std::path::Path::new("/")),
@@ -743,13 +743,15 @@ pub fn which(session: &dyn Session, name: &str) -> Option<String> {
         None,
     ) {
         Ok(ret) => ret,
-        Err(Error::CalledProcessError(status)) if status.code() == Some(1) => return None,
-        Err(e) => panic!("Unexpected error: {:?}", e),
+        Err(Error::CalledProcessError(status)) if status.code() == Some(1) => return Ok(None),
+        Err(e) => return Err(e),
     };
     if ret.is_empty() {
-        None
+        Ok(None)
     } else {
-        Some(String::from_utf8(ret).unwrap().trim().to_owned())
+        let path = String::from_utf8(ret)
+            .map_err(|e| Error::IoError(std::io::Error::new(std::io::ErrorKind::InvalidData, e)))?;
+        Ok(Some(path.trim().to_owned()))
     }
 }
 
@@ -990,8 +992,25 @@ mod tests {
     #[test]
     fn test_which() {
         let session = super::plain::PlainSession::new();
-        let which = super::which(&session, "ls");
+        let which = super::which(&session, "ls").unwrap();
         assert!(which.unwrap().ends_with("/ls"));
+    }
+
+    #[test]
+    fn test_which_not_found() {
+        let session = super::plain::PlainSession::new();
+        assert_eq!(super::which(&session, "this-does-not-exist").unwrap(), None);
+    }
+
+    #[test]
+    fn test_which_fails() {
+        let session = super::plain::PlainSession::new();
+        // `which` rejects an unknown option with a usage error, not with
+        // the exit status 1 that means "not found".
+        assert!(matches!(
+            super::which(&session, "-z"),
+            Err(super::Error::CalledProcessError(_))
+        ));
     }
 
     #[test]

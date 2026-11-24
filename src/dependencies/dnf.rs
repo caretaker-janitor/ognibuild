@@ -18,10 +18,13 @@ use crate::session::Session;
 /// Find the dnf binary available in the session.
 ///
 /// Prefers `dnf5` (Fedora 41+) over the older `dnf` when both are present.
-fn dnf_command(session: &dyn Session) -> Option<&'static str> {
-    ["dnf5", "dnf"]
-        .into_iter()
-        .find(|cmd| crate::session::which(session, cmd).is_some())
+fn dnf_command(session: &dyn Session) -> Result<Option<&'static str>, crate::session::Error> {
+    for cmd in ["dnf5", "dnf"] {
+        if crate::session::which(session, cmd)?.is_some() {
+            return Ok(Some(cmd));
+        }
+    }
+    Ok(None)
 }
 
 /// Run `repoquery` with the given selector and reduce the resulting NEVRA list
@@ -147,7 +150,7 @@ impl<'a> DnfResolver<'a> {
     /// Resolve a dependency to RPM package names, returning the dnf binary
     /// alongside the packages.
     fn resolve(&self, dep: &dyn Dependency) -> Result<(&'static str, Vec<String>), Error> {
-        let dnf = dnf_command(self.session).ok_or(Error::UnknownDependencyFamily)?;
+        let dnf = dnf_command(self.session)?.ok_or(Error::UnknownDependencyFamily)?;
         match dependency_to_dnf_packages(self.session, dnf, dep) {
             Some(packages) if !packages.is_empty() => Ok((dnf, packages)),
             _ => Err(Error::UnknownDependencyFamily),

@@ -686,7 +686,10 @@ fn main() -> Result<(), i32> {
     };
 
     let installer: Box<dyn Installer> = if args.installer == ["auto"] {
-        auto_installer(session.as_ref(), scope, args.dep_server_url.as_ref())
+        auto_installer(session.as_ref(), scope, args.dep_server_url.as_ref()).map_err(|e| {
+            eprintln!("Error: {}", e);
+            1
+        })?
     } else {
         select_installers(
             session.as_ref(),
