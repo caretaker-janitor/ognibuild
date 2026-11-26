@@ -240,6 +240,30 @@ pub struct BuildOnceResult {
     pub changes_names: Vec<PathBuf>,
 }
 
+/// Analyze the sbuild log of a failed build.
+fn analyze_sbuild_log(build_log_path: &Path) -> buildlog_consultant::sbuild::SbuildFailure {
+    use buildlog_consultant::sbuild::{worker_failure_from_sbuild_log, SbuildFailure, SbuildLog};
+    let unidentified = SbuildFailure {
+        stage: None,
+        description: None,
+        error: None,
+        phase: None,
+        section: None,
+        r#match: None,
+    };
+    let sbuildlog = match SbuildLog::try_from(std::fs::File::open(build_log_path).unwrap()) {
+        Ok(sbuildlog) => sbuildlog,
+        Err(e) => {
+            log::warn!("Error reading sbuild log: {}", e);
+            return unidentified;
+        }
+    };
+    worker_failure_from_sbuild_log(&sbuildlog).unwrap_or_else(|e| {
+        log::warn!("Error analyzing sbuild log: {}", e);
+        unidentified
+    })
+}
+
 /// Build a Debian package once and capture detailed error information.
 ///
 /// This function builds a package and provides more detailed error information
@@ -270,7 +294,6 @@ pub fn build_once(
     extra_repositories: Option<&Vec<&str>>,
 ) -> Result<BuildOnceResult, BuildOnceError> {
     use buildlog_consultant::problems::debian::DpkgSourceLocalChanges;
-    use buildlog_consultant::sbuild::{worker_failure_from_sbuild_log, SbuildFailure, SbuildLog};
     let build_log_path = output_directory.join(BUILD_LOG_FILENAME);
     log::debug!("Writing build log to {}", build_log_path.display());
     let mut logf = std::fs::File::create(&build_log_path).unwrap();
@@ -291,19 +314,7 @@ pub fn build_once(
             logf.sync_all().unwrap();
             logf.seek(std::io::SeekFrom::Start(0)).unwrap();
 
-            let sbuildlog =
-                SbuildLog::try_from(std::fs::File::open(&build_log_path).unwrap()).unwrap();
-            let sbuild_failure = worker_failure_from_sbuild_log(&sbuildlog).unwrap_or_else(|e| {
-                log::warn!("Error analyzing sbuild log: {}", e);
-                SbuildFailure {
-                    stage: None,
-                    description: None,
-                    error: None,
-                    phase: None,
-                    section: None,
-                    r#match: None,
-                }
-            });
+            let sbuild_failure = analyze_sbuild_log(&build_log_path);
 
             // Preserve the diff for later inspection
             if let Some(error) = sbuild_failure
@@ -728,6 +739,16 @@ mod tests {
             }
             _ => panic!("Expected Unidentified or Detailed BuildOnceError"),
         }
+    }
+
+    #[test]
+    fn test_analyze_sbuild_log_not_utf8() {
+        let td = tempdir().unwrap();
+        let path = td.path().join("build.log");
+        std::fs::write(&path, b"Non-ASCII character seen in '[par\xe1metros]'\n").unwrap();
+        let failure = analyze_sbuild_log(&path);
+        assert!(failure.error.is_none());
+        assert!(failure.stage.is_none());
     }
 
     #[test]
